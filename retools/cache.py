@@ -344,6 +344,22 @@ def invalidate_callable(callable, *args):
     return None
 invalidate_function = invalidate_callable
 
+def build_cache_key(skip_self, args, kwargs):
+    def s(strval):
+        try:
+            return str(strval)
+        except UnicodeEncodeError:
+            return unicode(strval)
+    if kwargs:
+        args = list(args)
+        key = lambda k, v: "{0}:{1}".format(s(k),s(v))
+        args.extend(key(k,v) for k, v in kwargs.iteritems())
+    if skip_self:
+        return " ".join(map(s, args[1:]))
+    else:
+        return " ".join(map(s, args))
+
+
 
 def cache_region(region, *deco_args, **kwargs):
     """Decorate a function such that its return result is cached,
@@ -411,26 +427,15 @@ def cache_region(region, *deco_args, **kwargs):
         regenerate = kwargs.get('regenerate', True)
 
         @wraps(func)
-        def cached(*args):
+        def cached(*args, **kwargs):
             if region not in CacheRegion.regions:
                 raise CacheConfigurationError(
                     'Cache region not configured: %s' % region)
             if not CacheRegion.enabled:
-                return func(*args)
-
-            if skip_self:
-                try:
-                    cache_key = " ".join(map(str, args[1:]))
-                except UnicodeEncodeError:
-                    cache_key = " ".join(map(unicode, args[1:]))
-            else:
-                try:
-                    cache_key = " ".join(map(str, args))
-                except UnicodeEncodeError:
-                    cache_key = " ".join(map(unicode, args))
-
+                return func(*args, **kwargs)
+            cache_key = build_cache_key(skip_self, args, kwargs)
             def go():
-                return func(*args)
+                return func(*args, **kwargs)
             return CacheRegion.load(region, namespace, cache_key,
                                     regenerate=regenerate, callable=go)
         cached._region = region
